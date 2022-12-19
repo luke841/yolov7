@@ -506,7 +506,7 @@ class IBin(nn.Module):
 
 
 class Model(nn.Module):
-    def __init__(self, cfg='yolor-csp-c.yaml', ch=3, nc=None, anchors=None):  # model, input channels, number of classes
+    def __init__(self, cfg='yolor-csp-c.yaml', ch=3, nc=None, anchors=None, quantize=False):  # model, input channels, number of classes
         super(Model, self).__init__()
         self.traced = False
         if isinstance(cfg, dict):
@@ -578,7 +578,14 @@ class Model(nn.Module):
         self.info()
         logger.info('')
 
+        self.quantize = quantize
+        if self.quantize:
+          self.quant = torch.quantization.QuantStub()
+          self.dequant = torch.quantization.DeQuantStub()
+
     def forward(self, x, augment=False, profile=False):
+        if self.quant:
+            x = self.quant(x)
         if augment:
             img_size = x.shape[-2:]  # height, width
             s = [1, 0.83, 0.67]  # scales
@@ -596,7 +603,10 @@ class Model(nn.Module):
                 y.append(yi)
             return torch.cat(y, 1), None  # augmented inference, train
         else:
-            return self.forward_once(x, profile)  # single-scale inference, train
+            y = self.forward_once(x, profile)
+            if self.dequant:
+                y = self.quant(y)
+            return y  # single-scale inference, train
 
     def forward_once(self, x, profile=False):
         y, dt = [], []  # outputs
